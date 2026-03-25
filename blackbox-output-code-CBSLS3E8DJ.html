@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RUSH</title>
+<style>
+/* --- BODY Y HEADER --- */
+body { font-family: Arial, sans-serif; background:#f3f3f3; margin:0; }
+.header {
+    background:#d60000; color:white; padding:15px; display:flex; gap:10px; align-items:center; position:sticky; top:0; z-index:1000;
+}
+.header input { flex:1; padding:10px; border:none; border-radius:6px; }
+.header h1 { margin:0; font-size:22px; }
+.header button { background:white; color:#d60000; padding:8px 12px; border:none; border-radius:6px; font-weight:bold; cursor:pointer; }
+
+/* --- CONTENEDOR SCROLLABLE --- */
+.container {
+    padding:20px;
+    max-height: calc(100vh - 120px); /* Header + carrito */
+    overflow-y:auto;
+}
+
+/* --- GRID PRODUCTOS --- */
+.products-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:20px;
+}
+.product-card {
+    background:white; border-radius:10px; padding:15px; box-shadow:0 2px 8px rgba(0,0,0,0.1); transition:0.2s; cursor:pointer;
+}
+.product-card:hover { box-shadow:0 3px 12px rgba(0,0,0,0.2); }
+.product-card img { width:100%; height:200px; object-fit:cover; border-radius:10px; }
+.price { font-size:22px; font-weight:bold; color:#c00000; }
+.add-btn { background:#d60000; color:white; padding:10px; margin-top:10px; border:none; width:100%; border-radius:6px; cursor:pointer; font-weight:bold; }
+
+/* --- CARRITO --- */
+#cart {
+    position:fixed; bottom:0; left:0; width:100%; background:white; border-top:4px solid #d60000; padding:15px; box-shadow:0 -3px 10px rgba(0,0,0,0.15);
+    z-index:999;
+}
+.cart-item { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #ddd; }
+.remove-btn { background:#d60000; color:white; border:none; padding:4px 8px; border-radius:5px; cursor:pointer; }
+#checkout { width:100%; padding:12px; background:#25d366; color:white; border:none; border-radius:8px; font-size:16px; margin-top:10px; cursor:pointer; }
+
+/* --- ADMIN --- */
+#adminPanel { display:none; background:white; padding:20px; border-radius:10px; margin-top:25px; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+#adminPanel input, #adminPanel textarea { width:100%; padding:10px; border-radius:6px; border:1px solid #ccc; margin-bottom:10px; }
+.delete-btn { background:#900; color:white; padding:6px 10px; border:none; border-radius:6px; cursor:pointer; }
+
+/* --- VISTA DETALLE --- */
+#productView {
+    display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:white; padding:15px; overflow-y:auto; z-index:2000; box-sizing:border-box;
+}
+#productView img { width:100%; max-height:45vh; object-fit:cover; border-radius:10px; }
+#productView h2 { font-size:20px; margin-top:15px; }
+#productView h3 { font-size:18px; color:#d60000; }
+#productView p { font-size:15px; line-height:1.4; }
+.back-btn { background:#d60000; color:white; padding:10px 15px; border:none; border-radius:8px; margin-top:5px; cursor:pointer; width:100%; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <h1>RUSH</h1>
+    <input type="text" id="search" placeholder="Buscar productos...">
+    <button id="adminBtn">Admin</button>
+</div>
+
+<!-- CONTENEDOR PRINCIPAL -->
+<div class="container">
+    <!-- PANEL ADMIN -->
+    <div id="adminPanel">
+        <h2>Panel Administrativo</h2>
+        <input id="pName" placeholder="Nombre del producto">
+        <input id="pPrice" placeholder="Precio" type="number">
+        <textarea id="pDesc" placeholder="Descripción"></textarea>
+        <input id="pImg" type="file" accept="image/*">
+        <button id="addProductBtn" class="add-btn">Agregar producto</button>
+        <div id="adminList"></div>
+    </div>
+
+    <!-- GRID PRODUCTOS -->
+    <div class="products-grid" id="productsGrid"></div>
+</div>
+
+<!-- CARRITO -->
+<div id="cart">
+    <h3>Carrito</h3>
+    <div id="cartItems"></div>
+    <p><strong>Total: $<span id="total">0</span></strong></p>
+    <button id="checkout">Enviar pedido por WhatsApp</button>
+</div>
+
+<!-- VISTA DETALLE -->
+<div id="productView"></div>
+
+<script>
+const WHATSAPP = "5491123865360";
+
+/* ELEMENTOS DOM */
+const adminPanel = document.getElementById("adminPanel");
+const pName = document.getElementById("pName");
+const pPrice = document.getElementById("pPrice");
+const pDesc = document.getElementById("pDesc");
+const pImg = document.getElementById("pImg");
+const productsGrid = document.getElementById("productsGrid");
+const cartItems = document.getElementById("cartItems");
+const total = document.getElementById("total");
+const productView = document.getElementById("productView");
+const searchInput = document.getElementById("search");
+const adminBtn = document.getElementById("adminBtn");
+const addProductBtn = document.getElementById("addProductBtn");
+const checkoutBtn = document.getElementById("checkout");
+const adminList = document.getElementById("adminList");
+
+let products = JSON.parse(localStorage.getItem("rush_store")) || [];
+let cart = [];
+
+/* --- ADMIN LOGIN --- */
+adminBtn.addEventListener("click", () => {
+    const pass = prompt("Ingresá la contraseña:");
+    if(pass !== "AYMARA2024") return alert("Contraseña incorrecta");
+    adminPanel.style.display = adminPanel.style.display === "block" ? "none" : "block";
+});
+
+/* --- AGREGAR PRODUCTO --- */
+addProductBtn.addEventListener("click", () => {
+    const name = pName.value.trim();
+    const price = pPrice.value.trim();
+    const desc = pDesc.value.trim();
+    const img = pImg.files[0];
+    if (!name || !price || !img) return alert("Completa todo.");
+
+    const reader = new FileReader();
+    reader.onload = e => {
+        products.push({
+            id: Date.now(),
+            name,
+            price: Number(price),
+            desc,
+            image: e.target.result
+        });
+        saveRender();
+        pName.value = "";
+        pPrice.value = "";
+        pDesc.value = "";
+        pImg.value = "";
+    };
+    reader.readAsDataURL(img);
+});
+
+/* --- BORRAR PRODUCTO --- */
+function deleteProduct(i){
+    if(confirm("¿Eliminar producto?")){
+        products.splice(i,1);
+        saveRender();
+    }
+}
+
+/* --- GUARDAR Y RENDER --- */
+function saveRender(){
+    localStorage.setItem("rush_store", JSON.stringify(products));
+    renderProducts();
+    renderAdmin();
+}
+
+/* --- RENDER PRODUCTOS --- */
+function renderProducts(list = products){
+    productsGrid.innerHTML = list.map((p,i)=>`
+        <div class="product-card" onclick="openProduct(${i})">
+            <img src="${p.image}">
+            <h3>${p.name}</h3>
+            <p class="price">$${p.price}</p>
+        </div>
+    `).join("");
+}
+
+/* --- RENDER ADMIN --- */
+function renderAdmin(){
+    adminList.innerHTML = products.map((p,i)=>`
+        <p>${p.name} - $${p.price} 
+        <button class="delete-btn" onclick="deleteProduct(${i})">Eliminar</button></p>
+    `).join("");
+}
+
+/* --- BUSCAR --- */
+searchInput.addEventListener("input", ()=>{
+    const q = searchInput.value.toLowerCase();
+    renderProducts(products.filter(p => p.name.toLowerCase().includes(q)));
+});
+
+/* --- CARRITO --- */
+function addToCart(i){ cart.push(products[i]); renderCart(); }
+function removeFromCart(i){ cart.splice(i,1); renderCart(); }
+function renderCart(){
+    cartItems.innerHTML = cart.map((c,i)=>`
+        <div class="cart-item">
+            <span>${c.name}</span>
+            <span>$${c.price} <button class="remove-btn" onclick="removeFromCart(${i})">X</button></span>
+        </div>
+    `).join("");
+    total.textContent = cart.reduce((a,b)=>a+b.price,0);
+}
+
+/* --- VISTA DETALLE --- */
+function openProduct(i){
+    const p = products[i];
+    productView.innerHTML = `
+        <button class="back-btn" onclick="closeProduct()">Volver</button><br><br>
+        <img src="${p.image}">
+        <h2>${p.name}</h2>
+        <h3>$${p.price}</h3>
+        <p>${p.desc}</p>
+        <button class="add-btn" onclick="addToCart(${i}); closeProduct();">Agregar al carrito</button>
+    `;
+    productView.style.display = "block";
+}
+function closeProduct(){ productView.style.display = "none"; }
+
+/* --- CHECKOUT WHATSAPP --- */
+checkoutBtn.addEventListener("click", ()=>{
+    if(cart.length === 0) return alert("Carrito vacío");
+    let text = "Hola! Quiero comprar:\n\n";
+    cart.forEach(c => text += `- ${c.name} ($${c.price})\n`);
+    text += `\nTotal: $${total.textContent}`;
+    window.open(`https://wa.me/${WHATSAPP}?text=${encodeURIComponent(text)}`);
+});
+
+/* --- INICIAL RENDER --- */
+saveRender();
+</script>
+
+</body>
+</html>
